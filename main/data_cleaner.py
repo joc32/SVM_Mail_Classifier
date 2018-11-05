@@ -12,6 +12,8 @@ for line in file_read:  # for every line in the array of not duplicate lines.
     result = re.sub(r'[^\w\s]','',line)  # regex for punctuation.
     result = result.lower()  # turns every line into lowercase text.
     result = re.sub(" \d+", " ", result)
+    #result = re.sub('[^A-Za-z0-9]+', '', result)
+    result = result.replace('_', "")
     result = result.replace("  ","")
     file_write.write(result)
 
