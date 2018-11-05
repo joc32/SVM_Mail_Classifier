@@ -25,12 +25,10 @@ import os
 # plt.show()
 
 
-path = '/Users/joe/PycharmProjects/Python_Projects/Security/spam-non-spam-dataset/train-mails/'
-filename = 'spam-non-spam-dataset/train-mails/'
+path = '/Users/joe/PycharmProjects/SVM_Mail_Classifier/main/spam-non-spam-dataset/train-mails/'
 
 file_out = 'out.txt'
 file = open(file_out,'w')
-
 
 # Open the files from the train mails directory and write their contents into one text file.
 for filename in os.listdir(path):
