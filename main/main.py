@@ -32,9 +32,8 @@ def data_cleaner(l):
     :param l: line to be cleaned.
     :return line: cleaned line.
 
-    Removes specified elements of a particular line from the dataset.
+    Removes specified elements of a particular line from a dataset using regular expressions.
     """
-
     line = re.sub(r'\W', ' ', l)  # remove all the special characters
     line = re.sub(r'\s+[a-zA-Z]\s+', ' ', line)  # remove all single characters
     line = re.sub(r'\^[a-zA-Z]\s+', ' ', line)  # Remove single characters from the start
@@ -53,11 +52,10 @@ def lemmatise(line, lmtzr):
     :return: joined lemmatised tokens as one list.
 
     Tokenize the text, reduce the tokens to their lemmas, return the joined tokens as one list
-
     """
     list = []
     words = nltk.word_tokenize(line)
-    bad_words = ['nthe','ha','nto','wa','hou','na','nand','nenron','ncc','nfrom','nthis','nplease','nthanks','ni','nsubject','ou','we']
+    bad_words = ['nthe', 'ha', 'nto', 'wa', 'hou', 'na', 'nand', 'nenron', 'ncc', 'nfrom', 'nthis', 'nplease', 'nthanks', 'ni', 'nsubject', 'ou', 'we']
     for item in words:
         item = lmtzr.lemmatize(item)
         if item in bad_words:
@@ -71,26 +69,23 @@ def lemmatise(line, lmtzr):
 
 
 def preprocessing(path):
-
     """
     :param path: path of the test / train data.
     :return: preprocessed_data
 
-    Clean and lemmatize the dataset.
-
+    Preprocess the dataset by applying the cleaning and lemmatising function on every file.
     """
-
     spam_data = load_files(path)
     preprocessed_data = []
-    lmtzr = WordNetLemmatizer()  # Instantiates new lemmatiser object.
+    lmtzr = WordNetLemmatizer()
     X, y = spam_data.data, spam_data.target
 
     print('Lengths of X and Y parameters.', len(X), len(y))
     print('Cleaning and Lemmatising the data.')
 
     for each in range(0, len(X)):
-        document = data_cleaner(str(X[each])) #Data Cleaning
-        document = lemmatise(document, lmtzr) #Lemmatise
+        document = data_cleaner(str(X[each]))
+        document = lemmatise(document, lmtzr)
         preprocessed_data.append(document)
 
     print('Data is preprocessed.')
@@ -98,64 +93,72 @@ def preprocessing(path):
     return preprocessed_data, X, y
 
 
-def plot_top_frequencies(x, y, total_sum):
+def return_dictionary_stats(X, vocabulary_items, k_words, param):
     """
     :param words_freq:
-    :return:
 
-    Plots the frequency of the top K words in the built dictionary.
-
+    Either plots the frequency of the top K words in the newly built dictionary,
+    Or prints out the whole dictionary.
+    Can be changed easily to plotting counts instead of the frequencies, just remove the / total sum * 100.
     """
+    sum_words = X.sum(axis=0)
+    words_freq = [(word, sum_words[0, idx]) for word, idx in vocabulary_items]
+    words_freq = sorted(words_freq, key=lambda x: x[1], reverse=True)
+    total_sum = int(sum_words.sum(axis=1))
 
-    plt.bar(x, y, width=0.6)
-    s = str(total_sum)
-    plt.title('Frequency Count of the top 10 words. Σ of all Counts: %i' % total_sum)
-    plt.ylabel('Frequency in %')
-    plt.xlabel('Word')
-    plt.show()
+    if param == 'dictionary':
+        print(words_freq)
+
+    elif param == 'frequencies':
+        x, y = [], []
+        for k, v in words_freq:
+            if k_words == 10:
+                break
+            else:
+                x.append(k)
+                y.append((v/total_sum)*100)
+                k_words += 1
+        plt.bar(x, y, width=0.6)
+        s = str(total_sum)
+        plt.title('Frequency Count of the top 10 words. Σ of all Counts: %i' % total_sum)
+        plt.ylabel('Frequency in %')
+        plt.xlabel('Word')
+        plt.show()
+    else:
+        print('Invalid Parameter.')
+
 
 def prepare_for_fitness(preprocessed_data):
     """
-    :param preprocessed_data: preprocessed data
+    :param preprocessed_data: already cleaned and lemmatised data.
     :return: X, count_vect, tdidf_transformer
 
-    Prepare the preprocessed_data into the model. Convert 'text' into 'numbers'.
+    Prepare the preprocessed_data into the model. Convert 'text' into 'numbers' (model readable format).
+    This function is called only once in the script, thus promising speed improvements while calling the
+    preprocessed data by multiple classifiers.
 
-    1. Vectorise
-    2. TD IDF
-
+    1.1 Instantiate the vectoriser object with N max_features (its size)
+    1.2 Vectorise the preprocessed data. (bag of words model)
+    2. Calculate the Term Frequency * Inverse Document Frequency for every word.
+    3. <OPTIONAL> Return dictionary statistics.
     """
     print('Vectorising.')
 
-    count_vect = CountVectorizer(max_features=1000, stop_words=stopwords.words('english'))
+    count_vect = CountVectorizer(stop_words=stopwords.words('english'))
     X = count_vect.fit_transform(preprocessed_data)
-    sum_words = X.sum(axis=0)
-    words_freq = [(word, sum_words[0, idx]) for word, idx in count_vect.vocabulary_.items()]
-    words_freq = sorted(words_freq, key=lambda x: x[1], reverse=True)
-    total_sum = int(sum_words.sum(axis=1))
-    x, y = [], []
-    k_words = 0
 
-    # can be changed easily to counts, remove the / total sum
-    for k, v in words_freq:
-        if k_words == 10:
-            break
-        else:
-            x.append(k)
-            y.append((v/total_sum)*100)
-            k_words += 1
-
-    plot_top_frequencies(x, y, total_sum)
-    # print((words_freq)) #print the dictionary
+    # <OPTIONAL>
+    # k_words = number of the top K most frequent words.
+    # Param: 'dictionary' for printing the dictionary, 'stats' for frequency / count plots.
+    return_dictionary_stats(X, count_vect.vocabulary_.items(), k_words=10, param='stats')
 
     print('Vectorised.')
     print('TD IDF.')
     tfidf_transformer = TfidfTransformer()
+    X = tfidf_transformer.fit_transform(X)
     print('TD IDF done.')
-    print('Fitting the model.')
     print('____________________________________________________________________________________')
     print('\n')
-    X = tfidf_transformer.fit_transform(X)
 
     return X, count_vect, tfidf_transformer
 
@@ -165,7 +168,6 @@ def plot_matrix(mat, test_data, classifier_name):
     :param mat: Confusion matrix to be plotted.
     :param test_data: Test_data
     :param classifier_name: Classifier Name
-    :return: none
 
     Plots the confusion matrix for a given classifier using Seaborn's heatmap module.
     """
@@ -182,21 +184,19 @@ def plot_matrix(mat, test_data, classifier_name):
 
 def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     """
-    :param classifier_no: 0-1-2
-    :param documents:
-    :param X1: Sparse Matrix
-    :param y: Target Names
-    :param count_vect: Vectoriser
-    :param tfidf_transformer: Transformer
+    :param classifier_no: 0-1-2 (NAIVE BAYES, LINEAR SVC, RANDOM FOREST CLASSIFIER)
+    :param X1: Sparse Matrix of TD*IDF.
+    :param y: Target Names / Categories
+    :param count_vect: Vectoriser sent from the prepare_for_fitness method.
+    :param tfidf_transformer: Transformer sent from the prepare_for_fitness method
     :return: accuracy score. The accuracy score of a classifier can be computed as
-            (TP + TN) / (TP + FP + FN + TN)
-
+                             (TP + TN) / (TP + FP + FN + TN)
     1. Fit Classifier
-    2. Load and Prepare Test Data
+    2. Load and Prepare Test Data by vectorising and computing TF*IDF for every token.
     3. Test data in the Fitted Classifier
     4. Report Objective Metrics
-
     """
+    print('Fitting the model.')
     if classifier_no == 0:
         text_clf = MultinomialNB().fit(X1, y)
         text_clf.fit(X1, y)
@@ -212,6 +212,7 @@ def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     test_data = load_files(test_path)
     X_test, y_test = test_data.data, test_data.target
 
+    # Prepare Test Data.
     X_test_counts = count_vect.transform(X_test)
     X_test_tfidf = tfidf_transformer.transform(X_test_counts)
     predicted = text_clf.predict(X_test_tfidf)
@@ -221,6 +222,7 @@ def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     print('confusion matrix', '\n', metrics.confusion_matrix(test_data.target, predicted))
     print('____________________________________________________________________________________')
 
+    # plots the confusion matrix using plot_matrix function
     mat = confusion_matrix(test_data.target, predicted)
     plot_matrix(mat, test_data, str(text_clf.__class__))
 
