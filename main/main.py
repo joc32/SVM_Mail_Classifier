@@ -1,7 +1,10 @@
+#Import general libraries
 import numpy as np
 import re
+import sys
 import matplotlib.pyplot as plt
-#import scikitplot as skplt
+import seaborn as sns
+import joblib
 
 #import NLTK methods
 import nltk
@@ -12,15 +15,16 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 #Import processing methods
 from sklearn import preprocessing, metrics, cross_validation
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.datasets import load_files, make_classification,make_blobs,make_gaussian_quantiles, load_digits
+from sklearn.datasets import load_files, make_classification, make_blobs, make_gaussian_quantiles, load_digits
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.model_selection import train_test_split, cross_val_predict
 
-#Import Classifiers
+#Import classifiers
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.linear_model import SGDClassifier
+from sklearn import svm
 from sklearn.naive_bayes import GaussianNB
+from mlxtend.plotting import plot_decision_regions
 
 
 def data_cleaner(l):
@@ -53,13 +57,21 @@ def lemmatise(line, lmtzr):
     """
     list = []
     words = nltk.word_tokenize(line)
+    bad_words = ['nthe','ha','nto','wa','hou','na','nand','nenron','ncc','nfrom','nthis','nplease','nthanks','ni','nsubject','ou','we']
     for item in words:
         item = lmtzr.lemmatize(item)
+        if item in bad_words:
+            item = item[1:]
+        if item == 'ou':
+            item = item[1:]
+        if item == 'ect':
+            item = ''
         list.append(item)
     return ' '.join(list)
 
 
 def preprocessing(path):
+
     """
     :param path: path of the test / train data.
     :return: preprocessed_data
@@ -70,30 +82,41 @@ def preprocessing(path):
 
     spam_data = load_files(path)
     preprocessed_data = []
-
     lmtzr = WordNetLemmatizer()  # Instantiates new lemmatiser object.
     X, y = spam_data.data, spam_data.target
+
     print('Lengths of X and Y parameters.', len(X), len(y))
-
-    #for i in range(0, 30):
-        #print(y[i], X[i])
-    #exit()
-    #for each in y:
-        #print(each)
-    #exit()
-
     print('Cleaning and Lemmatising the data.')
+
     for each in range(0, len(X)):
         document = data_cleaner(str(X[each])) #Data Cleaning
         document = lemmatise(document, lmtzr) #Lemmatise
         preprocessed_data.append(document)
+
     print('Data is preprocessed.')
     print('____________________________________________________________________________________')
     return preprocessed_data, X, y
 
 
+def plot_top_frequencies(x, y, total_sum):
+    """
+    :param words_freq:
+    :return:
+
+    Plots the frequency of the top K words in the built dictionary.
+
+    """
+
+    plt.bar(x, y, width=0.6)
+    s = str(total_sum)
+    plt.title('Frequency Count of the top 10 words. Σ of all Counts: %i' % total_sum)
+    plt.ylabel('Frequency in %')
+    plt.xlabel('Word')
+    plt.show()
+
 def prepare_for_fitness(preprocessed_data):
     """
+    :param preprocessed_data: preprocessed data
     :return: X, count_vect, tdidf_transformer
 
     Prepare the preprocessed_data into the model. Convert 'text' into 'numbers'.
@@ -102,10 +125,29 @@ def prepare_for_fitness(preprocessed_data):
     2. TD IDF
 
     """
-
     print('Vectorising.')
-    count_vect = CountVectorizer(stop_words=stopwords.words('english'))
+
+    count_vect = CountVectorizer(max_features=1000, stop_words=stopwords.words('english'))
     X = count_vect.fit_transform(preprocessed_data)
+    sum_words = X.sum(axis=0)
+    words_freq = [(word, sum_words[0, idx]) for word, idx in count_vect.vocabulary_.items()]
+    words_freq = sorted(words_freq, key=lambda x: x[1], reverse=True)
+    total_sum = int(sum_words.sum(axis=1))
+    x, y = [], []
+    k_words = 0
+
+    # can be changed easily to counts, remove the / total sum
+    for k, v in words_freq:
+        if k_words == 10:
+            break
+        else:
+            x.append(k)
+            y.append((v/total_sum)*100)
+            k_words += 1
+
+    plot_top_frequencies(x, y, total_sum)
+    # print((words_freq)) #print the dictionary
+
     print('Vectorised.')
     print('TD IDF.')
     tfidf_transformer = TfidfTransformer()
@@ -118,14 +160,34 @@ def prepare_for_fitness(preprocessed_data):
     return X, count_vect, tfidf_transformer
 
 
+def plot_matrix(mat, test_data, classifier_name):
+    """
+    :param mat: Confusion matrix to be plotted.
+    :param test_data: Test_data
+    :param classifier_name: Classifier Name
+    :return: none
+
+    Plots the confusion matrix for a given classifier using Seaborn's heatmap module.
+    """
+
+    title = 'Confusion Matrix for ' + classifier_name
+    sns.set(font_scale=1.4)
+    sns.heatmap(mat, square=True, annot=True, annot_kws={"size": 30}, fmt='d', cbar=False,
+                xticklabels=test_data.target_names, yticklabels=test_data.target_names)
+    plt.xlabel('Predicted Values')
+    plt.ylabel('True Values')
+    plt.title(title)
+    plt.show()
+
+
 def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     """
     :param classifier_no: 0-1-2
     :param documents:
-    :param X1:
-    :param y:
-    :param count_vect:
-    :param tfidf_transformer:
+    :param X1: Sparse Matrix
+    :param y: Target Names
+    :param count_vect: Vectoriser
+    :param tfidf_transformer: Transformer
     :return: accuracy score. The accuracy score of a classifier can be computed as
             (TP + TN) / (TP + FP + FN + TN)
 
@@ -137,9 +199,10 @@ def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     """
     if classifier_no == 0:
         text_clf = MultinomialNB().fit(X1, y)
+        text_clf.fit(X1, y)
     if classifier_no == 1:
-        text_clf = SGDClassifier()
-        text_clf = SGDClassifier().fit(X1, y)
+        text_clf = svm.SVC(kernel='linear', C=1.0)
+        text_clf.fit(X1, y)
     if classifier_no == 2:
         text_clf = RandomForestClassifier()
         text_clf = RandomForestClassifier().fit(X1, y)
@@ -158,40 +221,61 @@ def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     print('confusion matrix', '\n', metrics.confusion_matrix(test_data.target, predicted))
     print('____________________________________________________________________________________')
 
-    #mat = confusion_matrix(test_data.target, labels)
-    #sns.heatmap(mat.T, square=True, annot=True, fmt='d', cbar=False,
-    #xticklabels=train.target_names, yticklabels=train.target_names)
-    #plt.xlabel('true label')
-    #plt.ylabel('predicted label');
-
-    # predictions = cross_val_predict(text_clf, X,y)
-    # skplt.metrics.plot_confusion_matrix(y, predictions, normalize=True)
-    # plt.show()
+    mat = confusion_matrix(test_data.target, predicted)
+    plot_matrix(mat, test_data, str(text_clf.__class__))
 
     return np.mean(predicted == y_test)
 
 
 """
-Start the program with the dataset parameter p.
-p = 0 // Subset of Ling Spam Dataset.
-p = 1 // Whole enron Dataset.
-p = 2 // Own Dataset. 
+Start the program with the dataset parameter param.
+param = lingspam // Subset of Ling Spam Dataset.
+param = enron // Whole enron Dataset.
+param = own // Own Dataset. 
 """
 
-p = 0
-print('Classification Started')
 
-if p == 0:
+param = input("\n ENTER FILE MODE: "
+                  "\n <lingspam> for ling spam data set"
+                  "\n <enron> for enron dataset"
+                  "\n <own> for own dataset "
+                  "\n")
+param = 'lingspam'
+if param == 'lingspam':
+    print('Classification Started')
+    print('Classifiers running on Ling Spam dataset subset')
     path = '/Users/joe/PycharmProjects/SVM_Mail_Classifier/main/spam-non-spam-dataset/train-mails'
     pd, X, y = preprocessing(path)
     X1, v, t = prepare_for_fitness(pd)
-    a = test_classifier(0, X1, y, v, t)
-    b = test_classifier(1, X1, y, v, t)
-    c = test_classifier(2, X1, y, v, t)
-else:
+    accuracy = test_classifier(0, X1, y, v, t)
+    accuracy = test_classifier(1, X1, y, v, t)
+    accuracy = test_classifier(2, X1, y, v, t)
+elif param == 'enron':
+    print('Classification Started')
+    print('Classifiers running on Enron subset')
     path = '/Users/joe/PycharmProjects/SVM_Mail_Classifier/main/enron/train-data'
     pd, X, y = preprocessing(path)
     X1, v, t = prepare_for_fitness(pd)
-    a = test_classifier(0, X1, y, v, t)
-    b = test_classifier(1, X1, y, v, t)
-    c = test_classifier(2, X1, y, v, t)
+    accuracy = test_classifier(0, X1, y, v, t)
+    accuracy = test_classifier(1, X1, y, v, t)
+    accuracy = test_classifier(2, X1, y, v, t)
+elif param == 'own':
+    print('\n')
+    user_path = input("Please specify the absolute path of your training dataset: \n"
+                      "The path has be in the following format: \n"
+                      "\n"
+                      "../path to your training set/"
+                      "\n    |"
+                      "\n     -- <subdirectory category1>"
+                      "\n    |"
+                      "\n     -- <subdirectory category2>"
+                      "\n \nThe subdirectories have to include data that already belongs to either category"
+                      "\nWhen ready press ENTER key or press CTRL-C to stop the process.\n")
+    print('Classification Started. Training from', user_path)
+    pd, X, y = preprocessing(user_path)
+    X1, v, t = prepare_for_fitness(pd)
+    accuracy = test_classifier(0, X1, y, v, t)
+    accuracy = test_classifier(1, X1, y, v, t)
+    accuracy = test_classifier(2, X1, y, v, t)
+else:
+    print('Invalid dataset parameter. Killing program.')
