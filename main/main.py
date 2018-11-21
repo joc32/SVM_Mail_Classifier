@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 
-#import NLTK methods
+#Import NLTK methods
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem.wordnet import WordNetLemmatizer
@@ -75,10 +75,11 @@ def preprocessing(path):
 
     Preprocess the dataset by applying the cleaning and lemmatising function on every file.
     """
-    spam_data = load_files(path)
+    train_data = load_files(path)
     preprocessed_data = []
     lmtzr = WordNetLemmatizer()
-    X, y = spam_data.data, spam_data.target
+    X, y = train_data.data, train_data.target
+
 
     print('Lengths of X and Y parameters.', len(X), len(y))
     print('Cleaning and Lemmatising the data.')
@@ -98,8 +99,7 @@ def return_dictionary_stats(X, vocabulary_items, k_words, param):
     :param words_freq:
 
     Either plots the frequency of the top K words in the newly built dictionary,
-    Or prints out the whole dictionary.
-    Can be changed easily to plotting counts instead of the frequencies, just remove the / total sum * 100.
+    Or prints out the whole dictionary created by the count vectoriser object.
     """
     sum_words = X.sum(axis=0)
     words_freq = [(word, sum_words[0, idx]) for word, idx in vocabulary_items]
@@ -109,19 +109,28 @@ def return_dictionary_stats(X, vocabulary_items, k_words, param):
     if param == 'dictionary':
         print(words_freq)
 
-    elif param == 'frequencies':
-        x, y = [], []
-        for k, v in words_freq:
-            if k_words == 10:
+    elif param == 'stats':
+        x, y, z = [], [], []
+        iter = 0
+        for k, v in sorted(words_freq, key=lambda x: x[1], reverse=True):
+            if iter == k_words:
                 break
             else:
                 x.append(k)
                 y.append((v/total_sum)*100)
-                k_words += 1
+                z.append(v)
+                iter = iter + 1
         plt.bar(x, y, width=0.6)
         s = str(total_sum)
         plt.title('Frequency Count of the top 10 words. Σ of all Counts: %i' % total_sum)
         plt.ylabel('Frequency in %')
+        plt.xlabel('Word')
+        plt.show()
+
+        plt.bar(x, z, width=0.6)
+        s = str(total_sum)
+        plt.title('Word Count of the top 10 words. Σ of all Counts: %i' % total_sum)
+        plt.ylabel('Count')
         plt.xlabel('Word')
         plt.show()
     else:
@@ -149,7 +158,7 @@ def prepare_for_fitness(preprocessed_data):
 
     # <OPTIONAL>
     # k_words = number of the top K most frequent words.
-    # Param: 'dictionary' for printing the dictionary, 'stats' for frequency / count plots.
+    # Param: 'dictionary' for printing the dictionary, 'stats' for frequency and count plots.
     return_dictionary_stats(X, count_vect.vocabulary_.items(), k_words=10, param='stats')
 
     print('Vectorised.')
@@ -184,7 +193,7 @@ def plot_matrix(mat, test_data, classifier_name):
 
 def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     """
-    :param classifier_no: 0-1-2 (NAIVE BAYES, LINEAR SVC, RANDOM FOREST CLASSIFIER)
+    :param classifier_no: 0-1-2 (LINEAR SVM, MLTN NAIVE BAYES, RANDOM FOREST CLASSIFIER)
     :param X1: Sparse Matrix of TD*IDF.
     :param y: Target Names / Categories
     :param count_vect: Vectoriser sent from the prepare_for_fitness method.
@@ -198,19 +207,20 @@ def test_classifier(classifier_no, X1, y, count_vect, tfidf_transformer):
     """
     print('Fitting the model.')
     if classifier_no == 0:
-        text_clf = MultinomialNB().fit(X1, y)
+        text_clf = svm.SVC(kernel='linear', C=1.0)
         text_clf.fit(X1, y)
     if classifier_no == 1:
-        text_clf = svm.SVC(kernel='linear', C=1.0)
+        text_clf = MultinomialNB().fit(X1, y)
         text_clf.fit(X1, y)
     if classifier_no == 2:
         text_clf = RandomForestClassifier()
         text_clf = RandomForestClassifier().fit(X1, y)
 
     print('Results for', text_clf.__class__)
-    test_path = '/Users/joe/PycharmProjects/SVM_Mail_Classifier/main/spam-non-spam-dataset/test-mails'
+    test_path = '/spam-non-spam-dataset/test-mails'
     test_data = load_files(test_path)
     X_test, y_test = test_data.data, test_data.target
+
 
     # Prepare Test Data.
     X_test_counts = count_vect.transform(X_test)
@@ -242,11 +252,10 @@ param = input("\n ENTER FILE MODE: "
                   "\n <enron> for enron dataset"
                   "\n <own> for own dataset "
                   "\n")
-param = 'lingspam'
 if param == 'lingspam':
     print('Classification Started')
     print('Classifiers running on Ling Spam dataset subset')
-    path = '/Users/joe/PycharmProjects/SVM_Mail_Classifier/main/spam-non-spam-dataset/train-mails'
+    path = 'spam-non-spam-dataset/train-mails'
     pd, X, y = preprocessing(path)
     X1, v, t = prepare_for_fitness(pd)
     accuracy = test_classifier(0, X1, y, v, t)
@@ -255,7 +264,7 @@ if param == 'lingspam':
 elif param == 'enron':
     print('Classification Started')
     print('Classifiers running on Enron subset')
-    path = '/Users/joe/PycharmProjects/SVM_Mail_Classifier/main/enron/train-data'
+    path = 'enron/train-data'
     pd, X, y = preprocessing(path)
     X1, v, t = prepare_for_fitness(pd)
     accuracy = test_classifier(0, X1, y, v, t)
